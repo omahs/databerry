@@ -169,6 +169,11 @@ export const RunChainRequest = ChatRequest.extend({
   chainType: z.nativeEnum(ChainType),
 });
 
+export const FormChatRequest = ChatRequest.extend({
+  formId: z.string().cuid(),
+});
+export type FormChatRequest = z.infer<typeof FormChatRequest>;
+
 export type RunChainRequest = z.infer<typeof RunChainRequest>;
 
 export const ChatResponse = z.object({
