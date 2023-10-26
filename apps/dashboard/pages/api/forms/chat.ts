@@ -7,7 +7,10 @@ import { ApiError, ApiErrorType } from '@chaindesk/lib/api-error';
 import { BlaBlaForm } from '@chaindesk/lib/blablaform';
 import ChainManager from '@chaindesk/lib/chains';
 import ConversationManager from '@chaindesk/lib/conversation';
-import { createAuthApiHandler } from '@chaindesk/lib/createa-api-handler';
+import {
+  createApiHandler,
+  createAuthApiHandler,
+} from '@chaindesk/lib/createa-api-handler';
 import guardAgentQueryUsage from '@chaindesk/lib/guard-agent-query-usage';
 import runMiddleware from '@chaindesk/lib/run-middleware';
 import streamData from '@chaindesk/lib/stream-data';
@@ -20,13 +23,14 @@ import {
 import validate from '@chaindesk/lib/validate';
 import {
   ConversationChannel,
+  FormStatus,
   Message,
   MessageFrom,
   Usage,
 } from '@chaindesk/prisma';
 import { prisma } from '@chaindesk/prisma/client';
 
-const handler = createAuthApiHandler();
+const handler = createApiHandler();
 
 const cors = Cors({
   methods: ['POST', 'HEAD'],
@@ -112,15 +116,16 @@ export const formChat = async (
   req: AppNextApiRequest,
   res: NextApiResponse
 ) => {
+  console.log('CALLLED --------------------------->');
   const session = req.session;
   const data = req.body as FormChatRequest;
 
   const conversationId = data.conversationId || cuid();
 
-  guardAgentQueryUsage({
-    usage: session?.organization?.usage,
-    plan: session?.organization?.currentPlan,
-  });
+  // guardAgentQueryUsage({
+  //   usage: session?.organization?.usage,
+  //   plan: session?.organization?.currentPlan,
+  // });
 
   const conversation = await prisma.conversation.findUnique({
     where: {
@@ -152,10 +157,11 @@ export const formChat = async (
   }
 
   const conversationManager = new ConversationManager({
+    formId: data.formId,
     organizationId: session?.organization?.id,
     channel: ConversationChannel.dashboard,
     // agentId: agent?.id,
-    userId: session?.user?.id,
+    // userId: session?.user?.id,
     visitorId: data.visitorId!,
     conversationId,
   });
@@ -176,7 +182,7 @@ export const formChat = async (
   };
 
   const [chatRes] = await Promise.all([
-    manager.query({
+    queryForm({
       input: data.query,
       stream: data.streaming ? handleStream : undefined,
       history: conversation?.messages,
@@ -192,7 +198,7 @@ export const formChat = async (
         id: session?.organization?.usage?.id,
       },
       data: {
-        nbAgentQueries: (session?.organization?.usage?.nbAgentQueries || 0) + 1,
+        // nbAgentQueries: (session?.organization?.usage?.nbAgentQueries || 0) + 1,
         //   (queryCountConfig?.[agent?.modelName] || 1),
       },
     }),
@@ -200,11 +206,15 @@ export const formChat = async (
 
   const answerMsgId = cuid();
 
+  conversationManager.formtStatus = chatRes.isValid
+    ? FormStatus.COMPLETED
+    : FormStatus.IN_PROGRESS;
+
   conversationManager.push({
     id: answerMsgId,
     from: MessageFrom.agent,
-    text: chatRes.answer,
-    sources: chatRes.sources,
+    text: chatRes.answer!,
+    sources: [],
   });
 
   await conversationManager.save();
@@ -215,7 +225,7 @@ export const formChat = async (
       data: JSON.stringify({
         messageId: answerMsgId,
         answer: chatRes.answer,
-        sources: chatRes.sources,
+        sources: [],
         conversationId: conversationManager.conversationId,
         visitorId: conversationManager.visitorId,
       }),

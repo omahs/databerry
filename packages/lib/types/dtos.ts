@@ -170,7 +170,8 @@ export const RunChainRequest = ChatRequest.extend({
 });
 
 export const FormChatRequest = ChatRequest.extend({
-  formId: z.string().cuid(),
+  // formId: z.string().cuid(),
+  formId: z.string(),
 });
 export type FormChatRequest = z.infer<typeof FormChatRequest>;
 

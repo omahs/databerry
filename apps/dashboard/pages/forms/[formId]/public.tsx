@@ -29,15 +29,15 @@ export default function FormPage(props: { agent: Agent }) {
   const formId = router.query.formId as string;
 
   const [state, setState] = useStateReducer({
-    isPageReady: false,
+    isPageReady: true,
     form: undefined as Agent | undefined,
     config: {},
   });
 
-  const getAgentConfigQuery = useSWR<Prisma.PromiseReturnType<typeof getAgent>>(
-    `/api/forms/${formId}`,
-    fetcher
-  );
+  // const getAgentConfigQuery = useSWR<Prisma.PromiseReturnType<typeof getAgent>>(
+  //   `/api/forms/${formId}`,
+  //   fetcher
+  // );
 
   const methods = useChat({
     endpoint: `/api/forms/chat`,
@@ -48,15 +48,15 @@ export default function FormPage(props: { agent: Agent }) {
     localStorageConversationIdKey: 'formConversationId',
   });
 
-  useEffect(() => {
-    if (getAgentConfigQuery?.isLoading) {
-      setTimeout(() => {
-        setState({
-          isPageReady: true,
-        });
-      }, 0);
-    }
-  }, [getAgentConfigQuery?.isLoading]);
+  // useEffect(() => {
+  //   if (getAgentConfigQuery?.isLoading) {
+  //     setTimeout(() => {
+  //       setState({
+  //         isPageReady: true,
+  //       });
+  //     }, 0);
+  //   }
+  // }, [getAgentConfigQuery?.isLoading]);
 
   console.log('history', methods.history);
 
@@ -79,7 +79,8 @@ export default function FormPage(props: { agent: Agent }) {
       </Head>
 
 */}
-      {!state.form || !state.isPageReady ? (
+      {false ? (
+        // {!state.form || !state.isPageReady ? (
         <Stack
           sx={{
             width: '100vw',

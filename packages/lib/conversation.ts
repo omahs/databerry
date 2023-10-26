@@ -4,6 +4,7 @@ import {
   Agent,
   ConversationChannel,
   Datastore,
+  FormStatus,
   Message,
   Tool,
 } from '@chaindesk/prisma';
@@ -32,6 +33,8 @@ export default class ConversationManager {
   messages: MessageExtended[] = [];
   agentId?: string;
   metadata?: Record<string, any> = {};
+  formId?: string;
+  formtStatus?: FormStatus;
 
   constructor({
     organizationId,
@@ -41,6 +44,7 @@ export default class ConversationManager {
     channel,
     conversationId,
     metadata,
+    formId,
   }: {
     organizationId: string;
     agentId?: string;
@@ -49,6 +53,7 @@ export default class ConversationManager {
     userId?: string;
     visitorId?: string;
     metadata?: Record<string, any>;
+    formId?: string;
   }) {
     this.messages = [];
     this.userId = userId;
@@ -58,6 +63,7 @@ export default class ConversationManager {
     this.agentId = agentId;
     this.metadata = metadata;
     this.organizationId = organizationId;
+    this.formId = formId;
   }
 
   push(
@@ -86,6 +92,7 @@ export default class ConversationManager {
       create: {
         id: this.conversationId,
         channel: this.channel,
+
         organization: {
           connect: {
             id: this.organizationId,
@@ -96,6 +103,15 @@ export default class ConversationManager {
               agent: {
                 connect: {
                   id: this.agentId,
+                },
+              },
+            }
+          : {}),
+        ...(this.formId
+          ? {
+              form: {
+                connect: {
+                  id: this.formId,
                 },
               },
             }
@@ -133,6 +149,7 @@ export default class ConversationManager {
               visitorId: this.visitorId,
             }
           : {}),
+
         ...(this.userId
           ? {
               user: {
@@ -140,6 +157,11 @@ export default class ConversationManager {
                   id: this.userId,
                 },
               },
+            }
+          : {}),
+        ...(this.formtStatus
+          ? {
+              formStatus: this.formtStatus,
             }
           : {}),
       },
