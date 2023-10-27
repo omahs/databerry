@@ -158,7 +158,7 @@ export class BlaBlaForm {
             hasStreamedOnce = true;
           }
         } else {
-          handleLLMNewToken?.(completion.content!);
+          handleLLMNewToken?.(chunk?.choices?.[0]?.delta?.content!);
         }
       }
 
@@ -166,6 +166,7 @@ export class BlaBlaForm {
         // const values = await callFunction(completion.function_call);
 
         const values = JSON.parse(completion?.function_call.arguments!);
+        handleLLMNewToken?.(`\n${JSON.stringify(values)}`);
 
         return {
           answer: JSON.stringify(values),
