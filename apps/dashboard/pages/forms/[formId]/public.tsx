@@ -8,57 +8,43 @@ import {
   Typography,
 } from '@mui/joy';
 import { useRouter } from 'next/router';
-import React, { ReactElement, useEffect, useMemo } from 'react';
+import React, { ReactElement, useEffect, useMemo, useState } from 'react';
 import superjson from 'superjson';
 import useSWR from 'swr';
 
+import ChatBox from '@app/components/ChatBox';
 import SEO from '@app/components/SEO';
 import useChat from '@app/hooks/useChat';
 import useStateReducer from '@app/hooks/useStateReducer';
 import { getAgent } from '@app/pages/api/agents/[id]';
 
+import ConversationManager from '@chaindesk/lib/conversation';
 import pickColorBasedOnBgColor from '@chaindesk/lib/pick-color-based-on-bgcolor';
 import { fetcher } from '@chaindesk/lib/swr-fetcher';
 import { AgentInterfaceConfig } from '@chaindesk/lib/types/models';
-import { Agent, Prisma } from '@chaindesk/prisma';
+import { Agent, ConversationChannel, Prisma } from '@chaindesk/prisma';
 import { prisma } from '@chaindesk/prisma/client';
 
 export default function FormPage(props: { agent: Agent }) {
   const router = useRouter();
-
   const formId = router.query.formId as string;
-
   const [state, setState] = useStateReducer({
     isPageReady: true,
     form: undefined as Agent | undefined,
     config: {},
   });
 
-  // const getAgentConfigQuery = useSWR<Prisma.PromiseReturnType<typeof getAgent>>(
-  //   `/api/forms/${formId}`,
-  //   fetcher
-  // );
-
   const methods = useChat({
     endpoint: `/api/forms/chat`,
     queryBody: {
-      // chainType: state.currentChainType,
       formId,
     },
     localStorageConversationIdKey: 'formConversationId',
   });
 
-  // useEffect(() => {
-  //   if (getAgentConfigQuery?.isLoading) {
-  //     setTimeout(() => {
-  //       setState({
-  //         isPageReady: true,
-  //       });
-  //     }, 0);
-  //   }
-  // }, [getAgentConfigQuery?.isLoading]);
-
-  console.log('history', methods.history);
+  useEffect(() => {
+    methods.handleChatSubmit('alright, I am ready to fill the form.');
+  }, []);
 
   return (
     <>
@@ -119,13 +105,14 @@ export default function FormPage(props: { agent: Agent }) {
             height: '100vh',
           }}
         >
-          {/* <Input  /> */}
+          <ChatBox
+            messages={methods?.history}
+            onSubmit={methods.handleChatSubmit}
+          />
           <Button
-            onClick={() => {
-              methods.handleChatSubmit('Hello World');
-            }}
+            onClick={() => methods.handleChatSubmit('ready to fill the form.')}
           >
-            Trigger Chat Submit
+            Fill
           </Button>
         </Stack>
       )}

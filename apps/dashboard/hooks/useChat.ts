@@ -185,7 +185,7 @@ const useChat = ({ endpoint, channel, queryBody, ...otherProps }: Props) => {
         let bufferEndpointResponse = '';
         class RetriableError extends Error {}
         class FatalError extends Error {}
-
+        // TODO: fetchEvent
         await fetchEventSource(endpoint, {
           method: 'POST',
           headers: {

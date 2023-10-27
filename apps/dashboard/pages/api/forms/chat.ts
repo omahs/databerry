@@ -1,10 +1,9 @@
 import Cors from 'cors';
 import cuid from 'cuid';
-// import type { JSONSchema7 } from 'json-schema';
 import { NextApiRequest, NextApiResponse } from 'next';
 
 import { ApiError, ApiErrorType } from '@chaindesk/lib/api-error';
-import { BlaBlaForm } from '@chaindesk/lib/blablaform';
+import { BlaBlaForm, BlablaSchema } from '@chaindesk/lib/blablaform';
 import ChainManager from '@chaindesk/lib/chains';
 import ConversationManager from '@chaindesk/lib/conversation';
 import {
@@ -32,6 +31,10 @@ import { prisma } from '@chaindesk/prisma/client';
 
 const handler = createApiHandler();
 
+/*
+
+*/
+
 const cors = Cors({
   methods: ['POST', 'HEAD'],
 });
@@ -46,15 +49,9 @@ export const formSchema = {
     country: {
       type: 'string',
     },
-    firstName: {
-      type: 'string',
-    },
-    lastName: {
-      type: 'string',
-    },
   },
   required: ['email'],
-};
+} satisfies BlablaSchema;
 
 const queryForm = async ({
   input,
@@ -75,33 +72,10 @@ const queryForm = async ({
   httpResponse?: any;
   abortController?: any;
 }) => {
-  // if (filters?.datasource_ids?.length || filters?.datastore_ids?.length) {
-  //   return qa({
-  //     query: input,
-  //     temperature,
-  //     stream,
-  //     history,
-  //     filters,
-  //     abortController,
-  //   });
-  // }
-
-  // return chat({
-  //   initialMessages: [
-  //     new SystemMessage(
-  //       `You are a productivity assistant. Please provide a helpful and professional response to the user's question or issue.`
-  //     ),
-  //   ],
-  //   prompt: input,
-  //   temperature: temperature || 0.5,
-  //   stream,
-  //   abortController,
-  // });
-
-  // todo fetch form schmea from db
+  // TODO:  get the form schema from the database.
 
   const form = new BlaBlaForm({
-    schema: formSchema as any,
+    schema: formSchema,
     // stream,
     messages: history?.map((each) => ({
       content: each.text,
@@ -116,11 +90,11 @@ export const formChat = async (
   req: AppNextApiRequest,
   res: NextApiResponse
 ) => {
-  console.log('CALLLED --------------------------->');
   const session = req.session;
   const data = req.body as FormChatRequest;
 
-  const conversationId = data.conversationId || cuid();
+  // TODO: Remove this, conversation Id should come from the form id
+  const conversationId = data.conversationId! || cuid();
 
   // guardAgentQueryUsage({
   //   usage: session?.organization?.usage,
@@ -135,11 +109,13 @@ export const formChat = async (
       messages: {
         // take: -10,
         orderBy: {
-          createdAt: 'desc',
+          createdAt: 'asc',
         },
       },
     },
   });
+
+  console.log(conversation?.messages);
 
   const manager = new ChainManager({});
   const ctrl = new AbortController();
@@ -158,7 +134,6 @@ export const formChat = async (
 
   const conversationManager = new ConversationManager({
     formId: data.formId,
-    organizationId: session?.organization?.id,
     channel: ConversationChannel.dashboard,
     // agentId: agent?.id,
     // userId: session?.user?.id,
@@ -181,28 +156,17 @@ export const formChat = async (
     }
   };
 
-  const [chatRes] = await Promise.all([
-    queryForm({
-      input: data.query,
-      stream: data.streaming ? handleStream : undefined,
-      history: conversation?.messages,
-      temperature: data.temperature,
-      promptTemplate: data.promptTemplate,
-      promptType: data.promptType,
-      filters: data.filters,
-      httpResponse: res,
-      abortController: ctrl,
-    }),
-    prisma.usage.update({
-      where: {
-        id: session?.organization?.usage?.id,
-      },
-      data: {
-        // nbAgentQueries: (session?.organization?.usage?.nbAgentQueries || 0) + 1,
-        //   (queryCountConfig?.[agent?.modelName] || 1),
-      },
-    }),
-  ]);
+  const chatRes = await queryForm({
+    input: data.query,
+    stream: data.streaming ? handleStream : undefined,
+    history: conversation?.messages,
+    temperature: data.temperature,
+    promptTemplate: data.promptTemplate,
+    promptType: data.promptType,
+    filters: data.filters,
+    httpResponse: res,
+    abortController: ctrl,
+  });
 
   const answerMsgId = cuid();
 
@@ -213,10 +177,11 @@ export const formChat = async (
   conversationManager.push({
     id: answerMsgId,
     from: MessageFrom.agent,
-    text: chatRes.answer!,
+    text: chatRes.answer.content,
     sources: [],
   });
 
+  // TODO: save Message
   await conversationManager.save();
 
   if (data.streaming) {

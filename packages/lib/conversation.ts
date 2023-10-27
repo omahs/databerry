@@ -25,7 +25,7 @@ type MessageExtended = Pick<Message, 'from' | 'text' | 'sources'> & {
 };
 
 export default class ConversationManager {
-  organizationId: string;
+  organizationId?: string;
   userId?: string;
   visitorId?: string;
   conversationId?: string;
@@ -46,7 +46,7 @@ export default class ConversationManager {
     metadata,
     formId,
   }: {
-    organizationId: string;
+    organizationId?: string;
     agentId?: string;
     channel: ConversationChannel;
     conversationId?: string;
@@ -93,11 +93,16 @@ export default class ConversationManager {
         id: this.conversationId,
         channel: this.channel,
 
-        organization: {
-          connect: {
-            id: this.organizationId,
-          },
-        },
+        ...(this.organizationId
+          ? {
+              organization: {
+                connect: {
+                  id: this.organizationId,
+                },
+              },
+            }
+          : {}),
+
         ...(this.agentId
           ? {
               agent: {

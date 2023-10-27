@@ -6,10 +6,12 @@ import { JSONSchema7 } from 'json-schema';
 import OpenAI from 'openai';
 import { ChatCompletionMessageParam } from 'openai/resources/chat';
 
+import { BlablaSchema } from './blablaform.types';
+
 const defaultSystemPrompt = `You role is too help fill a form that follows a JSON Schema. You will ask questions in natural language, one at a time, to the user and fill the form. Use a friendly and energetic tone. You are able to go back to previous questions if asked.`;
 
 export class BlaBlaForm {
-  schema: JSONSchema7;
+  schema: BlablaSchema;
   values: object;
   modelName: string;
   messages: ChatCompletionMessageParam[];
@@ -26,7 +28,7 @@ export class BlaBlaForm {
     locale = 'en',
     handleLLMNewToken,
   }: {
-    schema: JSONSchema7;
+    schema: BlablaSchema;
     values?: Record<string, unknown>;
     modelName?: string;
     messages?: ChatCompletionMessageParam[];
@@ -64,7 +66,7 @@ export class BlaBlaForm {
     messages,
     handleLLMNewToken,
   }: {
-    schema: JSONSchema7;
+    schema: BlablaSchema;
     modelName: string;
     messages: ChatCompletionMessageParam[];
     handleLLMNewToken?: (token: string) => any;
@@ -73,50 +75,44 @@ export class BlaBlaForm {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    //   const prompt = json
-    //   ? `extractData Current Value: ${JSON.stringify(json)}\nContent: ${each}`
-    //   : each;
-
     const isStreamEnabled = Boolean(handleLLMNewToken);
 
     const completion = await openai.chat.completions.create({
       model: modelName,
       messages,
-      // stream: isStreamEnabled ? true : false,
+      stream: true,
       functions: [
         {
           name: 'isFormValid',
           description:
-            'Trigger when the form is valid and all questions have been asked',
-          parameters: schema as any,
+            'Trigger only when all the required field have been answered',
+          parameters: schema,
         },
-        // {
-        //   name: 'getFormValues',
-        //   description:
-        //     'Use this function to extract values from the conversation along with the completion',
-        //   parameters: schema,
-        // },
+        {
+          name: 'getFormValues',
+          description:
+            'Use this function to extract values from the conversation along with the completion',
+          parameters: schema,
+        },
       ],
     });
 
-    for await (const part of completion as any) {
-      handleLLMNewToken?.(part.choices[0]?.delta?.content);
-    }
-
-    // let message = '';
-
-    // const message = completion?.choices?.[0]?.message;
-    const message = completion?.choices?.[0]?.message;
-
+    const message = (completion as any)?.choices?.[0]?.message;
+    console.log('-----------,', completion);
+    // handleLLMNewToken(completion);
     // console.log(completion?.data?.choices?.[0]?.message);
     // console.log('compleltion', completion?.data?.choices?.[0]?.message);
 
     return {
-      answer: message?.content,
-      isValid: !message?.content,
-      values: message?.function_call?.arguments
-        ? JSON.parse(message?.function_call?.arguments)
-        : undefined,
+      answer:
+        (completion as any)?.choices[0].message?.function_call?.name ===
+        'isFormValid'
+          ? 'thank you for fill out the form'
+          : message,
+      isValid:
+        (completion as any)?.choices[0].message?.function_call?.name ===
+        'isFormValid',
+      values: undefined,
     };
   }
 
