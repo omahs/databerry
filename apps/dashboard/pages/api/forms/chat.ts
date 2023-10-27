@@ -76,7 +76,7 @@ const queryForm = async ({
 
   const form = new BlaBlaForm({
     schema: formSchema,
-    // stream,
+    handleLLMNewToken: stream,
     messages: history?.map((each) => ({
       content: each.text,
       role: each.from === MessageFrom.agent ? 'assistant' : 'user',
@@ -177,7 +177,7 @@ export const formChat = async (
   conversationManager.push({
     id: answerMsgId,
     from: MessageFrom.agent,
-    text: chatRes.answer.content,
+    text: chatRes.answer as string,
     sources: [],
   });
 
