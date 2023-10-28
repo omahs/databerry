@@ -4,57 +4,30 @@ import { NextApiRequest, NextApiResponse } from 'next';
 
 import { ApiError, ApiErrorType } from '@chaindesk/lib/api-error';
 import { BlaBlaForm, BlablaSchema } from '@chaindesk/lib/blablaform';
-import ChainManager from '@chaindesk/lib/chains';
 import ConversationManager from '@chaindesk/lib/conversation';
-import {
-  createApiHandler,
-  createAuthApiHandler,
-} from '@chaindesk/lib/createa-api-handler';
-import guardAgentQueryUsage from '@chaindesk/lib/guard-agent-query-usage';
+import { createApiHandler } from '@chaindesk/lib/createa-api-handler';
 import runMiddleware from '@chaindesk/lib/run-middleware';
 import streamData from '@chaindesk/lib/stream-data';
 import { AppNextApiRequest, SSE_EVENT } from '@chaindesk/lib/types';
-import {
-  ChatRequest,
-  FormChatRequest,
-  RunChainRequest,
-} from '@chaindesk/lib/types/dtos';
+import { ChatRequest } from '@chaindesk/lib/types/dtos';
 import validate from '@chaindesk/lib/validate';
 import {
   ConversationChannel,
   FormStatus,
   Message,
   MessageFrom,
-  Usage,
 } from '@chaindesk/prisma';
 import { prisma } from '@chaindesk/prisma/client';
 
 const handler = createApiHandler();
 
-/*
-
-*/
-
 const cors = Cors({
   methods: ['POST', 'HEAD'],
 });
 
-export const formSchema = {
-  type: 'object',
-  properties: {
-    email: {
-      type: 'string',
-      format: 'email',
-    },
-    country: {
-      type: 'string',
-    },
-  },
-  required: ['email'],
-} satisfies BlablaSchema;
-
 const queryForm = async ({
   input,
+  formId,
   stream,
   history,
   temperature,
@@ -63,6 +36,7 @@ const queryForm = async ({
   abortController,
 }: {
   input: string;
+  formId: string;
   stream?: any;
   history?: Message[] | undefined;
   temperature?: ChatRequest['temperature'];
@@ -72,10 +46,19 @@ const queryForm = async ({
   httpResponse?: any;
   abortController?: any;
 }) => {
-  // TODO:  get the form schema from the database.
+  const found = await prisma.form.findUnique({
+    where: { id: formId },
+    select: {
+      publishedConfig: true,
+    },
+  });
+
+  if (!found) {
+    throw new ApiError(ApiErrorType.NOT_FOUND);
+  }
 
   const form = new BlaBlaForm({
-    schema: formSchema,
+    schema: found.publishedConfig as BlablaSchema,
     handleLLMNewToken: stream,
     messages: history?.map((each) => ({
       content: each.text,
@@ -90,16 +73,10 @@ export const formChat = async (
   req: AppNextApiRequest,
   res: NextApiResponse
 ) => {
-  const session = req.session;
-  const data = req.body as FormChatRequest;
+  const formId = req.query.formId as string;
+  const data = req.body as ChatRequest;
 
-  // TODO: Remove this, conversation Id should come from the form id
   const conversationId = data.conversationId! || cuid();
-
-  // guardAgentQueryUsage({
-  //   usage: session?.organization?.usage,
-  //   plan: session?.organization?.currentPlan,
-  // });
 
   const conversation = await prisma.conversation.findUnique({
     where: {
@@ -115,9 +92,6 @@ export const formChat = async (
     },
   });
 
-  console.log(conversation?.messages);
-
-  const manager = new ChainManager({});
   const ctrl = new AbortController();
 
   if (data.streaming) {
@@ -133,10 +107,8 @@ export const formChat = async (
   }
 
   const conversationManager = new ConversationManager({
-    formId: data.formId,
+    formId,
     channel: ConversationChannel.dashboard,
-    // agentId: agent?.id,
-    // userId: session?.user?.id,
     visitorId: data.visitorId!,
     conversationId,
   });
@@ -158,6 +130,7 @@ export const formChat = async (
 
   const chatRes = await queryForm({
     input: data.query,
+    formId,
     stream: data.streaming ? handleStream : undefined,
     history: conversation?.messages,
     temperature: data.temperature,
@@ -181,7 +154,6 @@ export const formChat = async (
     sources: [],
   });
 
-  // TODO: save Message
   await conversationManager.save();
 
   if (data.streaming) {
@@ -190,6 +162,7 @@ export const formChat = async (
       data: JSON.stringify({
         messageId: answerMsgId,
         answer: chatRes.answer,
+        isValid: chatRes.isValid,
         sources: [],
         conversationId: conversationManager.conversationId,
         visitorId: conversationManager.visitorId,
@@ -214,7 +187,7 @@ export const formChat = async (
 handler.post(
   validate({
     handler: formChat,
-    body: FormChatRequest,
+    body: ChatRequest,
   })
 );
 

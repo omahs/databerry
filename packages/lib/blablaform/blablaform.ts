@@ -9,11 +9,10 @@ import {
   ChatCompletionMessage,
   ChatCompletionMessageParam,
 } from 'openai/resources/chat';
-import pRetry from 'p-retry';
 
 import { BlablaSchema } from './blablaform.types';
 
-const defaultSystemPrompt = `You role is too help fill a form that follows a JSON Schema. You will ask questions in natural language, one at a time, to the user and fill the form. Use a friendly and energetic tone. You are able to go back to previous questions if asked.`;
+const defaultSystemPrompt = `You role is to help fill a form that follows a JSON Schema that will be given to you, you should only ask about the field specified in the properties of the schema. You will ask questions in natural language, one at a time, to the user and fill the form. Use a friendly and energetic tone. You are able to go back to previous questions if asked.`;
 
 function messageReducer(
   previous: ChatCompletionMessage,
@@ -46,6 +45,7 @@ async function callFunction(
   const args = JSON.parse(function_call.arguments!);
   switch (function_call.name) {
     case 'isFormValid':
+      // TODO: save values to the db and send an email
       return await handleValidForm(args);
     default:
       throw new Error('No function found');
@@ -83,15 +83,7 @@ export class BlaBlaForm {
     this.modelName = modelName;
     this.locale = locale;
     this.handleLLMNewToken = handleLLMNewToken;
-    const _systemPrompt = `${systemPrompt}\nWrite in the language of the following locale: ${locale}${
-      values
-        ? `Use the following values to fill the form ask questions about the remaining missing ones:  ${Object.keys(
-            values
-          )
-            .map((key) => `${key}: ${values[key]}`)
-            .join(', ')}`
-        : ``
-    }`;
+    const _systemPrompt = `${systemPrompt}\nUsing the language specified by ${locale}, please retrieve only the information outlined in ${this.schema.properties}. While optional fields can be omitted by the user, ensure you do not request or accept any information beyond what's defined in the schema. For reference, the current schema is: ${this.schema.properties}.`;
     this.systemPrompt = _systemPrompt;
     this.messages = [
       {
@@ -113,9 +105,6 @@ export class BlaBlaForm {
     messages: ChatCompletionMessageParam[];
     handleLLMNewToken?: (token: string) => any;
   }) {
-    // return pRetry(
-    //   async () => {
-    //     try {
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -123,9 +112,6 @@ export class BlaBlaForm {
     const isStreamEnabled = Boolean(handleLLMNewToken);
 
     if (isStreamEnabled) {
-      // let response: Omit<OpenAIClient.Completion, "choices"> | undefined;
-      console.log('CALLELD --------------------------->');
-
       const stream = await openai.chat.completions.create({
         model: modelName,
         messages,
@@ -150,11 +136,9 @@ export class BlaBlaForm {
       let hasStreamedOnce = false;
       for await (const chunk of stream) {
         completion = messageReducer(completion, chunk);
-        console.log('TEST ------------------>', completion);
 
         if (completion.function_call) {
           if (!hasStreamedOnce) {
-            handleLLMNewToken?.('Thinking ....');
             hasStreamedOnce = true;
           }
         } else {
@@ -163,14 +147,14 @@ export class BlaBlaForm {
       }
 
       if (completion?.function_call?.name === 'isFormValid') {
-        // const values = await callFunction(completion.function_call);
-
         const values = JSON.parse(completion?.function_call.arguments!);
-        handleLLMNewToken?.(`\n${JSON.stringify(values)}`);
-
+        handleLLMNewToken?.(
+          'You have successfully filled the form. Thank you for your time'
+        );
         return {
-          answer: JSON.stringify(values),
-          isValid: !!values,
+          answer:
+            'You have successfully filled the form. Thank you for your time',
+          isValid: true,
           values,
         };
       }
@@ -209,19 +193,14 @@ export class BlaBlaForm {
           'isFormValid',
         values:
           (completion as any)?.choices[0].message?.function_call?.name ===
-          'isFormValid',
+          'getFormValues'
+            ? JSON.parse(
+                (completion as any)?.choices[0].message?.function_call
+                  ?.arguments!
+              )
+            : undefined,
       };
     }
-    //     } catch (err) {
-    //       setTimeout(() => {
-    //         throw err;
-    //       }, 1000);
-    //     }
-    //   },
-    //   {
-    //     retries: 0,
-    //   }
-    // );
   }
 
   async run(query?: string) {
@@ -238,8 +217,6 @@ export class BlaBlaForm {
       modelName: this.modelName,
       handleLLMNewToken: this.handleLLMNewToken,
     });
-
-    console.log('RECEIVED ANSWER', answer);
 
     this.messages.push({
       role: 'assistant',

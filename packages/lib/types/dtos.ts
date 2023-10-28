@@ -169,12 +169,6 @@ export const RunChainRequest = ChatRequest.extend({
   chainType: z.nativeEnum(ChainType),
 });
 
-export const FormChatRequest = ChatRequest.extend({
-  // formId: z.string().cuid(),
-  formId: z.string(),
-});
-export type FormChatRequest = z.infer<typeof FormChatRequest>;
-
 export type RunChainRequest = z.infer<typeof RunChainRequest>;
 
 export const ChatResponse = z.object({
@@ -318,3 +312,25 @@ export const CrispUpdateMetadataSchema = CrispSchema.extend({
 export const ConversationStatusSchema = z.object({
   status: z.nativeEnum(ConversationStatus),
 });
+
+export const CreateFormSchema = z.object({
+  id: z.string().optional(),
+  name: z.string(),
+  datastoreId: z.string().optional(),
+  draftConfig: z
+    .object({
+      fields: z.array(
+        z.object({
+          id: z.union([z.string(), z.number()]).optional(),
+          fieldName: z.string(),
+          required: z.boolean().optional(),
+        })
+      ),
+    })
+    .optional(),
+  publishedConfig: z.record(z.any()).optional(),
+});
+export type CreateFormSchema = z.infer<typeof CreateFormSchema>;
+
+export const UpdateFormSchema = CreateFormSchema.partial();
+export type UpdateFormSchema = z.infer<typeof UpdateFormSchema>;
