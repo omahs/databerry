@@ -83,7 +83,7 @@ export class BlaBlaForm {
     this.modelName = modelName;
     this.locale = locale;
     this.handleLLMNewToken = handleLLMNewToken;
-    const _systemPrompt = `${systemPrompt}\nUsing the language specified by ${locale}, please retrieve only the information outlined in ${this.schema.properties}. While optional fields can be omitted by the user, ensure you do not request or accept any information beyond what's defined in the schema. For reference, the current schema is: ${this.schema.properties}.`;
+    const _systemPrompt = `${systemPrompt}\nUsing the language specified by ${locale}, then please retrieve only the information outlined in ${this.schema.properties}. While optional fields can be omitted by the user, ensure you do not request or accept any information beyond what's defined in the schema. For reference, the current schema is: ${this.schema.properties} `;
     this.systemPrompt = _systemPrompt;
     this.messages = [
       {
@@ -134,6 +134,22 @@ export class BlaBlaForm {
 
       let completion = {} as ChatCompletionMessage;
       let hasStreamedOnce = false;
+      const TOKEN_SEPERATOR = '__BLABLA_FIELD_ID__:';
+      const generateOrderedCombinations = (
+        str: string,
+        index = 1
+      ): string[] => {
+        if (index > str.length) return [];
+        return [str.substring(0, index)].concat(
+          generateOrderedCombinations(str, index + 1)
+        );
+      };
+      const potentialStarts = generateOrderedCombinations(TOKEN_SEPERATOR);
+      const pattern = /__BLABLA_FIELD_ID__:[a-z][a-zA-Z0-9]{24}/g;
+
+      let currentFieldId = '';
+
+      let buffer = '';
       for await (const chunk of stream) {
         completion = messageReducer(completion, chunk);
 
@@ -142,7 +158,30 @@ export class BlaBlaForm {
             hasStreamedOnce = true;
           }
         } else {
-          handleLLMNewToken?.(chunk?.choices?.[0]?.delta?.content!);
+          const content = chunk?.choices?.[0]?.delta?.content!;
+          buffer += content;
+          // let shouldStream = true;
+
+          // const match = buffer.match(pattern);
+
+          // if (match) {
+          //   currentFieldId = match[0];
+          //   // remove pattern from the buffer
+          //   buffer = buffer.replace(pattern, '');
+          // } else {
+          //   for (const start of potentialStarts) {
+          //     if (buffer.endsWith(start)) {
+          //       shouldStream = false;
+          //       break;
+          //     }
+          //   }
+          // }
+
+          // if (shouldStream) {
+          handleLLMNewToken?.(content);
+          buffer = '';
+          // buffer = '';
+          // }
         }
       }
 
@@ -159,10 +198,12 @@ export class BlaBlaForm {
         };
       }
 
+      console.log('-------------------------', currentFieldId);
       return {
         answer: completion.content,
         isValid: false,
         values: undefined,
+        currentFieldId,
       };
     } else {
       const completion = await openai.chat.completions.create({

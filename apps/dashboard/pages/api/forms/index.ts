@@ -57,7 +57,7 @@ export const createForm = async (
           id: organizationId,
         },
       },
-      draftConfig: {},
+      draftConfig: data.draftConfig,
       publishedConfig: {},
     },
   });

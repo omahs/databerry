@@ -58,7 +58,7 @@ const queryForm = async ({
   }
 
   const form = new BlaBlaForm({
-    schema: found.publishedConfig as BlablaSchema,
+    schema: (found?.publishedConfig as any)?.schema as BlablaSchema,
     handleLLMNewToken: stream,
     messages: history?.map((each) => ({
       content: each.text,

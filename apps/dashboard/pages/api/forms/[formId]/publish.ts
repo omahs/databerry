@@ -13,25 +13,43 @@ import { prisma } from '@chaindesk/prisma/client';
 
 const handler = createApiHandler();
 
-const validationSchema = z.object({
-  type: z.literal('object'),
-  properties: z.record(z.any()),
-  required: z.array(z.string()),
-});
+type Field = {
+  id: string;
+  required: boolean;
+  fieldName: string;
+};
 
-const referenceSchema = {
-  type: 'object',
+type InputObject = {
+  fields: Field[];
+};
+
+type Schema = {
+  type: 'object';
+  required: string[];
   properties: {
-    firstFieldName: {
-      type: 'string',
-      format: 'email',
+    [key: string]: {
+      id: string;
+      type: string;
+    };
+  };
+};
+
+function generateSchema(fields: Field[]): Schema {
+  return fields?.reduce(
+    (acc, field) => {
+      acc['properties'][field.fieldName] = {
+        id: field.id,
+        type: 'string',
+      };
+      acc['required'] = [
+        ...acc.required,
+        ...(field.required ? [field.fieldName] : []),
+      ];
+      return acc;
     },
-    secondFieldName: {
-      type: 'number',
-    },
-  },
-  required: ['firstFieldName'],
-} satisfies BlablaSchema;
+    { type: 'object', properties: {}, required: [] } as Schema
+  );
+}
 
 const cors = Cors({
   methods: ['POST', 'HEAD'],
@@ -60,44 +78,21 @@ export const publishForm = async (
   if (!fields) {
     throw new Error('Must register at least one ield');
   }
-
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+  const schema = generateSchema(fields);
+  await prisma.form.update({
+    where: {
+      id: formId,
+    },
+    data: {
+      publishedConfig: {
+        schema,
+        introScreen: (found?.draftConfig as any).introScreen,
+      },
+    },
   });
-
-  const _systemPrompt = `I'm designing a form and need a direct, parsable JSON schema for the following field names: ${JSON.stringify(
-    fields
-  )}, Based on common conventions and best practices and on this reference schema ${JSON.stringify(
-    referenceSchema
-  )}, please provide a direct JSON schema specific to these inputs without any additional explanations, formatting, comments, or the "$schema" property.`;
-
-  // should only be called when we publish, update publishedConfig
-  const response = await openai.chat.completions.create({
-    model: 'gpt-3.5-turbo',
-    messages: [
-      {
-        role: 'system',
-        content: _systemPrompt,
-      },
-    ],
-    stream: false,
-  });
-  const schema = JSON.parse(response?.choices?.[0]?.message.content!);
-  const validationResult = validationSchema.safeParse(schema);
-
-  if (validationResult.success) {
-    await prisma.form.update({
-      where: {
-        id: formId,
-      },
-      data: {
-        publishedConfig: schema,
-      },
-    });
-  }
 
   // TODO: add publish form-to-url logic
-  return response?.choices?.[0]?.message;
+  return schema;
 };
 
 handler.post(respond(publishForm));

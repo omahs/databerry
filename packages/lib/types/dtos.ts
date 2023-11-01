@@ -322,10 +322,16 @@ export const CreateFormSchema = z.object({
       fields: z.array(
         z.object({
           id: z.union([z.string(), z.number()]).optional(),
-          fieldName: z.string(),
+          fieldName: z.string().min(5),
           required: z.boolean().optional(),
         })
       ),
+      introScreen: z
+        .object({
+          introText: z.string(),
+          ctaText: z.string(),
+        })
+        .optional(),
     })
     .optional(),
   publishedConfig: z.record(z.any()).optional(),

@@ -1,27 +1,42 @@
-import { AutoAwesomeMosaicOutlined, RocketLaunch } from '@mui/icons-material';
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  AddAPhoto,
+  AutoAwesomeMosaicOutlined,
+  RocketLaunch,
+} from '@mui/icons-material';
 import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
 import {
   Box,
   Button,
   Card,
+  Checkbox,
+  Divider,
   IconButton,
   Input,
+  Option,
+  Select,
   Stack,
   Tab,
   tabClasses,
   TabList,
   Tabs,
+  Textarea,
   Typography,
 } from '@mui/joy';
+import Chip from '@mui/joy/Chip';
 import cuid from 'cuid';
 import { useRouter } from 'next/router';
 import { GetServerSidePropsContext } from 'next/types';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { FormProvider, useFieldArray, useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import useSWR from 'swr';
 import useSWRMutation from 'swr/mutation';
+import z from 'zod';
 
+import AutoSaveForm from '@app/components/AutoSaveForm';
 import Layout from '@app/components/Layout';
 import useChat from '@app/hooks/useChat';
 import { getProductFromHostname } from '@app/hooks/useProduct';
@@ -35,22 +50,39 @@ import {
   generateActionFetcher,
   HTTP_METHOD,
 } from '@chaindesk/lib/swr-fetcher';
+import { CreateFormSchema } from '@chaindesk/lib/types/dtos';
 import { withAuth } from '@chaindesk/lib/withAuth';
 import { Prisma } from '@chaindesk/prisma';
 
 import { isEmpty } from '..';
-
 interface FormDashboardProps {}
 
 type Field = {
   id: string;
   fieldName: string;
   required: boolean;
+  choices?: string[];
 };
+
+const DynamicFeildsResolver = z.object({
+  dynamicFields: z.array(
+    z.object({
+      id: z.string(),
+      fieldName: z.string().min(5, 'fieldame must be longer than 5 characters'),
+      required: z.boolean(),
+      choices: z.optional(z.array(z.string())),
+    })
+  ),
+  introScreen: z
+    .object({
+      introText: z.string(),
+      ctaText: z.string(),
+    })
+    .optional(),
+});
 
 function FormDashboard(props: FormDashboardProps) {
   const [state, setState] = useStateReducer({
-    fields: [] as Field[],
     currentAnswer: '',
     isConversationStarted: false,
     isFormCompleted: false,
@@ -73,59 +105,53 @@ function FormDashboard(props: FormDashboardProps) {
     Prisma.PromiseReturnType<typeof publishForm>
   >(`/api/forms/${formId}/publish`, generateActionFetcher(HTTP_METHOD.POST));
 
+  const methods = useForm<{
+    dynamicFields: Field[];
+    introScreen: { introText: string; ctaText: string };
+  }>({
+    resolver: zodResolver(DynamicFeildsResolver),
+    defaultValues: {},
+  });
+  console.log(
+    (getFormQuery.data?.publishedConfig as any)?.introScreen?.ctaText
+  );
+  const {
+    control,
+    register,
+    getValues,
+    setValue,
+    trigger,
+    formState: { errors },
+  } = methods;
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'dynamicFields',
+  });
+
   const chatData = useChat({
     endpoint: `/api/forms/${formId}/chat`,
   });
 
   useEffect(() => {
-    setState({
-      fields: ((getFormQuery.data?.draftConfig as any)?.fields ||
-        []) as Field[],
-    });
+    // load data on first render
+    if (fields.length === 0) {
+      setValue(
+        'introScreen',
+        (getFormQuery.data?.draftConfig as any)?.introScreen
+      );
+      append(
+        ((getFormQuery.data?.draftConfig as any)?.fields || []) as Field[]
+      );
+      localStorage.setItem('conversationId', '');
+    }
   }, [getFormQuery.data]);
 
   useEffect(() => {
-    localStorage.setItem('conversationId', '');
-  }, []);
-
-  React.useEffect(() => {
     if (typeof window !== 'undefined' && !router.query.tab) {
       handleChangeTab('settings');
     }
   }, [router.query.tab]);
-
-  // TODO: turn the field methods into a reducer!
-  const addField = () => {
-    setState({
-      fields: [
-        ...state?.fields,
-        { id: cuid(), fieldName: '', required: false },
-      ],
-      isPublishable: false,
-    });
-  };
-
-  const deleteField = (id: string) => {
-    setState({
-      fields: state?.fields?.filter((field) => field.id !== id),
-      isPublishable: state.fields.length > 0,
-    });
-  };
-
-  const changeField = ({
-    id,
-    newFieldName,
-  }: {
-    id: string;
-    newFieldName: string;
-  }) => {
-    setState({
-      fields: state.fields.map((field) =>
-        field.id === id ? { ...field, fieldName: newFieldName } : field
-      ),
-      isPublishable: newFieldName.trim() !== '',
-    });
-  };
 
   const handleChangeTab = (tab: string) => {
     router.query.tab = tab;
@@ -138,23 +164,21 @@ function FormDashboard(props: FormDashboardProps) {
       success: 'Published!',
       error: 'Something went wrong',
     });
+    getFormQuery.mutate();
   };
 
   const answerQuestion = async (answer: string) => {
     await chatData.handleChatSubmit(answer);
   };
 
-  const save = async () => {
-    await toast.promise(
-      updateFormMutation.trigger({
-        draftConfig: { fields: state?.fields },
-      } as any),
-      {
-        loading: 'saving...',
-        success: 'saved!',
-        error: 'Something went wrong',
-      }
-    );
+  const saveFields = async () => {
+    console.log('-------------', getValues('introScreen'));
+    await updateFormMutation.trigger({
+      draftConfig: {
+        fields: getValues('dynamicFields'),
+        introScreen: getValues('introScreen'),
+      },
+    } as any);
   };
 
   const initiateForm = () => {
@@ -196,7 +220,7 @@ function FormDashboard(props: FormDashboardProps) {
             bgcolor: 'transparent',
             width: '100%',
           }}
-          onChange={(event, value) => {
+          onChange={(_, value) => {
             handleChangeTab(value as string);
           }}
         >
@@ -241,128 +265,205 @@ function FormDashboard(props: FormDashboardProps) {
                 width: '100%',
               }}
             >
-              <Button
-                variant="outlined"
-                disabled={!state.isPublishable}
-                startDecorator={<RocketLaunch />}
-                onClick={handlePublish}
-              >
-                Publish Form
-              </Button>
-            </Box>
-            <Box>
-              <Typography level="title-md">Informations To Collect</Typography>
-              <Typography level="body-sm"></Typography>
-            </Box>
-            <Box>
-              {state?.fields?.map((field) => (
-                <Box
-                  key={field.id}
-                  display="flex"
-                  alignItems="center"
-                  marginBottom={2}
-                >
-                  <Input
-                    variant="soft"
-                    defaultValue={field.fieldName}
-                    onBlur={(e) =>
-                      changeField({
-                        id: field.id,
-                        newFieldName: e.target.value,
-                      })
-                    }
-                    sx={{ mx: 2, width: '100%' }}
-                  />
-                  <IconButton
-                    size="sm"
-                    variant="outlined"
-                    onClick={() => deleteField(field.id)}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </Box>
-              ))}
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  width: '100%',
-                }}
-              >
+              {(!isEmpty(getFormQuery.data?.publishedConfig) ||
+                !isEmpty(getFormQuery.data?.draftConfig)) && (
                 <Button
                   variant="outlined"
-                  startDecorator={<AddIcon />}
-                  onClick={addField}
+                  disabled={!state.isPublishable}
+                  startDecorator={<RocketLaunch />}
+                  onClick={handlePublish}
                 >
-                  Add another field
+                  Publish Form
                 </Button>
-              </Box>
-
-              <Button variant="outlined" onClick={save}>
-                Save
-              </Button>
+              )}
             </Box>
-          </>
-        )}
 
-        {router.query.tab === 'preview' && (
-          <Box
-            height="100%"
-            minHeight="400px"
-            display="flex"
-            flexDirection="column"
-            alignItems="center"
-            justifyContent="center"
-          >
-            {isEmpty(getFormQuery.data?.publishedConfig) ? (
-              <Typography>You need to publish your form first</Typography>
-            ) : (
-              <Box>
-                <Box width="100%" display="flex" sx={{ textAlign: 'center' }}>
-                  {chatData.history.length > 0 &&
-                    chatData?.history[chatData.history.length - 1].from ===
-                      'agent' && (
-                      <Typography>
-                        {chatData?.history[chatData.history.length - 1].message}
-                      </Typography>
-                    )}
-                  {chatData.isStreaming && (
-                    <span className="inline-block w-0.5 h-4 bg-current animate-typewriterCursor"></span>
-                  )}
-                </Box>
-                <Box
-                  width="100%"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  sx={{ textAlign: 'center', mt: '20px' }}
-                >
-                  {!chatData.isStreaming &&
-                    !chatData.isFomValid &&
-                    state.isConversationStarted && (
-                      <input
-                        autoFocus
-                        className="bg-transparent outline-none text-xl"
-                        placeholder="Type your answer "
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            answerQuestion(state.currentAnswer);
+            <Stack direction="row" gap={3}>
+              {/* start */}
+              <Stack width="35%">
+                <Typography level="title-md">
+                  Informations To Collect
+                </Typography>
+                <FormProvider {...methods}>
+                  {fields?.map((field, index) => (
+                    <Box
+                      key={field.id}
+                      display="flex"
+                      alignItems="center"
+                      marginBottom={2}
+                    >
+                      <Box sx={{ mx: 1, width: '100%' }}>
+                        <Input
+                          size="sm"
+                          key={field.id}
+                          defaultValue={field.fieldName}
+                          {...register(
+                            `dynamicFields.${index}.fieldName` as const
+                          )}
+                          endDecorator={
+                            <IconButton onClick={() => remove(index)}>
+                              <CloseIcon fontSize="sm" />
+                            </IconButton>
                           }
-                        }}
-                        onChange={(e) =>
-                          setState({ currentAnswer: e.target.value })
-                        }
+                        />
+
+                        {(
+                          getValues(`dynamicFields.${index}.choices`) || []
+                        ).map((choice, i) => (
+                          <Chip key={i}>{choice}</Chip>
+                        ))}
+                      </Box>
+                      <Checkbox
+                        size="sm"
+                        {...register(
+                          `dynamicFields.${index}.required` as const
+                        )}
                       />
+                    </Box>
+                  ))}
+                  <Typography
+                    level="body-sm"
+                    sx={{
+                      cursor: 'pointer',
+                      '&:hover': {
+                        textDecoration: 'underline',
+                      },
+                      width: '140px',
+                    }}
+                    startDecorator={<AddIcon fontSize="sm" />}
+                    onClick={() => {
+                      append({
+                        fieldName: '',
+                        id: cuid(),
+                        required: false,
+                      });
+                      trigger();
+                    }}
+                  >
+                    Add another field
+                  </Typography>
+                  <AutoSaveForm
+                    onSubmit={saveFields}
+                    defaultValues={{}}
+                    validFormAction={() => setState({ isPublishable: true })}
+                  />
+                </FormProvider>
+
+                <Stack spacing={0.6} mt={2}>
+                  <Typography level="title-md">Welcome Screen</Typography>
+                  <Box>
+                    <Typography level="body-sm">Intoduce the form.</Typography>
+                    <Textarea
+                      sx={{ height: '100px', overflowY: 'auto' }}
+                      {...register('introScreen.introText')}
+                    />
+                  </Box>
+                  <Box>
+                    <Typography level="body-sm">Call to action</Typography>
+                    <Input {...register('introScreen.ctaText')} />
+                  </Box>
+                </Stack>
+              </Stack>
+
+              <Box
+                height="100%"
+                minHeight="80vh"
+                width="100%"
+                display="flex"
+                flexDirection="column"
+                alignItems="center"
+                justifyContent="center"
+                sx={{ border: '1px solid gray ', borderRadius: '9px' }}
+              >
+                {isEmpty(getFormQuery.data?.publishedConfig) ? (
+                  <Typography>You need to publish your form first</Typography>
+                ) : (
+                  <Box>
+                    <Box
+                      width="100%"
+                      display="flex"
+                      sx={{ textAlign: 'center' }}
+                    >
+                      {chatData.history.length > 0 &&
+                        chatData?.history[chatData.history.length - 1].from ===
+                          'agent' && (
+                          <Typography>
+                            {
+                              chatData?.history[chatData.history.length - 1]
+                                .message
+                            }
+                          </Typography>
+                        )}
+                      {chatData.isStreaming && (
+                        <span className="inline-block w-0.5 h-4 bg-current animate-typewriterCursor"></span>
+                      )}
+                    </Box>
+                    <Box
+                      width="100%"
+                      height="100%"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      sx={{ textAlign: 'center', mt: '20px' }}
+                    >
+                      {!chatData.isStreaming &&
+                        !chatData.isFomValid &&
+                        state.isConversationStarted && (
+                          <input
+                            autoFocus
+                            className="bg-transparent outline-none text-xl"
+                            placeholder="Type your answer "
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                answerQuestion(state.currentAnswer);
+                              }
+                            }}
+                            onChange={(e) =>
+                              setState({ currentAnswer: e.target.value })
+                            }
+                          />
+                        )}
+                    </Box>
+
+                    {!state.isConversationStarted && (
+                      <Stack
+                        spacing={2}
+                        maxWidth="100%"
+                        sx={{
+                          textAlign: 'center',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Typography
+                          level="h4"
+                          maxWidth="300px"
+                          sx={{
+                            wordWrap: 'break-word',
+                            whiteSpace: 'normal',
+                          }}
+                        >
+                          {
+                            (getFormQuery.data?.publishedConfig as any)
+                              ?.introScreen?.introText
+                          }
+                        </Typography>
+                        <Button
+                          variant="outlined"
+                          onClick={initiateForm}
+                          sx={{ width: '50%' }}
+                        >
+                          {
+                            (getFormQuery.data?.publishedConfig as any)
+                              ?.introScreen?.ctaText
+                          }
+                        </Button>
+                      </Stack>
                     )}
-                </Box>
-                {!state.isConversationStarted && (
-                  <Button variant="outlined" onClick={initiateForm}>
-                    Start A New Inquiry
-                  </Button>
+                  </Box>
                 )}
               </Box>
-            )}
-          </Box>
+            </Stack>
+          </>
         )}
       </Card>
     </Box>

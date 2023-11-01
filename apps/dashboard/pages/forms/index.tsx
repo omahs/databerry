@@ -1,36 +1,22 @@
-import { zodResolver } from '@hookform/resolvers/zod';
 import AddIcon from '@mui/icons-material/Add';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import {
-  Box,
-  Button,
-  Card,
-  Chip,
-  Divider,
-  Modal,
-  Sheet,
-  Stack,
-  Typography,
-} from '@mui/joy';
+import { Box, Button, Card, Chip, Stack, Typography } from '@mui/joy';
 import Dropdown from '@mui/joy/Dropdown';
 import Menu from '@mui/joy/Menu';
 import MenuButton from '@mui/joy/MenuButton';
 import MenuItem from '@mui/joy/MenuItem';
 import axios from 'axios';
+import cuid from 'cuid';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { GetServerSidePropsContext } from 'next/types';
-import { useSession } from 'next-auth/react';
 import { ReactElement } from 'react';
-import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import useSWR from 'swr';
 import useSWRMutation from 'swr/mutation';
 
-import Input from '@app/components/Input';
 import Layout from '@app/components/Layout';
 import { getProductFromHostname } from '@app/hooks/useProduct';
-import useStateReducer from '@app/hooks/useStateReducer';
 
 import { generateActionFetcher, HTTP_METHOD } from '@chaindesk/lib/swr-fetcher';
 import { fetcher } from '@chaindesk/lib/swr-fetcher';
@@ -45,10 +31,6 @@ export const isEmpty = (obj: any) => Object?.keys(obj || {}).length === 0;
 
 export default function FormsPage() {
   const router = useRouter();
-  const [state, setState] = useStateReducer({
-    isFormModalOpen: false,
-  });
-
   const getFormsQuery = useSWR<Prisma.PromiseReturnType<typeof getForms>>(
     '/api/forms',
     fetcher
@@ -58,21 +40,34 @@ export default function FormsPage() {
     Prisma.PromiseReturnType<typeof createForm>
   >('api/forms/', generateActionFetcher(HTTP_METHOD.POST)<CreateFormSchema>);
 
-  const methods = useForm<CreateFormSchema>({
-    resolver: zodResolver(CreateFormSchema),
-    defaultValues: {},
-  });
-
-  const onSubmit = async (values: CreateFormSchema) => {
+  const onSubmit = async () => {
     try {
-      await toast.promise(formMutation.trigger(values as any), {
-        loading: 'Creating empty form...',
-        success: 'Created!',
-        error: 'Something went wrong',
-      });
-      methods.reset();
+      await toast.promise(
+        formMutation.trigger({
+          name: 'untitled',
+          draftConfig: {
+            fields: [
+              {
+                id: cuid(),
+                required: false,
+                fieldName: 'fullname',
+              },
+              {
+                id: cuid(),
+                required: false,
+                fieldName: 'email',
+              },
+            ],
+          },
+        } as any),
+        {
+          loading: 'Creating empty form...',
+          success: 'Created!',
+          error: 'Something went wrong',
+        }
+      );
+
       getFormsQuery.mutate();
-      setState({ isFormModalOpen: false });
     } catch (err) {
       console.log('error', err);
     }
@@ -92,43 +87,6 @@ export default function FormsPage() {
 
   return (
     <Stack spacing={2} sx={{ width: '100%' }}>
-      <Modal
-        onClose={() => setState({ isFormModalOpen: false })}
-        open={state.isFormModalOpen}
-        sx={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <Sheet
-          variant="outlined"
-          sx={{
-            width: 600,
-            maxWidth: '100%',
-            borderRadius: 'md',
-            p: 3,
-            boxShadow: 'lg',
-            overflowY: 'auto',
-            maxHeight: '95vh',
-          }}
-        >
-          <Typography level="h2">New Form</Typography>
-          <Divider sx={{ my: 2 }} />
-          <form onSubmit={methods.handleSubmit(onSubmit)}>
-            <Input
-              control={methods.control}
-              label="name"
-              {...methods.register('name')}
-            />
-            <Divider sx={{ my: 1 }} />
-            <Button variant="outlined" sx={{ ml: 'auto' }} type="submit">
-              Create
-            </Button>
-          </form>
-        </Sheet>
-      </Modal>
-
       <Box
         sx={{
           display: 'flex',
@@ -136,12 +94,7 @@ export default function FormsPage() {
           width: 'auto',
         }}
       >
-        <Button
-          endDecorator={<AddIcon />}
-          onClick={() => {
-            setState({ isFormModalOpen: true });
-          }}
-        >
+        <Button onClick={onSubmit} endDecorator={<AddIcon />}>
           Create New From
         </Button>
       </Box>
